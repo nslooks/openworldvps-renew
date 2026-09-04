@@ -2,7 +2,7 @@ name: Auto Renew Openworld VPS
 
 on:
   schedule:
-    - cron: '0 2 */2 * *' # 每2天UTC 2点 (北京时间10点),自行调整
+    - cron: '28 6 */2 * *' # 每2天UTC 2点 (北京时间10点),自行调整
   workflow_dispatch:
 
 jobs:
