@@ -24,6 +24,9 @@ DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 TG_CHAT_ID   = os.environ.get("TG_CHAT_ID", "")
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 
+# 账号标识邮箱(多账号时 TG 通知里显示,方便分辨是哪个号,可选)
+EMAIL = os.environ.get("EMAIL", "")
+
 # 网站根域
 
 SITE_BASE = "https://openworld.eu.org"
@@ -41,6 +44,8 @@ def send_telegram_message(message: str):
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
         print("⚠️ Telegram 未配置，跳过通知")
         return
+    if EMAIL:
+        message = f"👤 账号: {EMAIL}\n{message}"
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     try:
         requests.post(url, json={"chat_id": TG_CHAT_ID, "text": message}, timeout=10)

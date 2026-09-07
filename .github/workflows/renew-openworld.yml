@@ -1,8 +1,6 @@
 name: Auto Renew Openworld VPS
 
 on:
-  schedule:
-    - cron: '28 6 */2 * *' # 每2天UTC 2点 (北京时间10点),自行调整
   workflow_dispatch:
 
 jobs:
@@ -29,7 +27,9 @@ jobs:
 
       - name: 🚀 运行 Openworld 续期脚本
         env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          # 分支 acc1~acc5 读取对应前缀(ACC1_*);main 分支回退到不带前缀的旧变量名
+          DISCORD_TOKEN: ${{ secrets[format('{0}_DISCORD_TOKEN', github.ref_name)] || secrets.DISCORD_TOKEN }}
+          EMAIL: ${{ secrets[format('{0}_EMAIL', github.ref_name)] || secrets.EMAIL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           HEADLESS: "true"
@@ -57,7 +57,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+          # 只清理当前分支(账号)的运行记录,避免误删其他账号的记录
+          runs=$(gh run list --workflow="${{ github.workflow }}" --branch="${{ github.ref_name }}" --limit=100 --json databaseId --jq '.[].databaseId')
           count=0
           for run_id in $runs; do
             count=$((count + 1))

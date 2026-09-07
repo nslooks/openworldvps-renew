@@ -23,9 +23,12 @@
 
 | Secret 名称 | 是否必填 | 说明 |
 | :--- | :---: | :--- |
-| `DISCORD_TOKEN` | **必填** | 你的 Discord 账号授权 Token（获取方式见下文） |
+| `DISCORD_TOKEN` | **必填** | 你的 Discord 账号授权 Token（单账号场景，获取方式见下文） |
+| `EMAIL` | ❌ 可选 | 账号标识邮箱，TG 通知会显示（多账号时用来区分是哪个号） |
 | `TG_BOT_TOKEN` | ❌ 可选 | Telegram Bot Token（用于接收续期结果通知） |
 | `TG_CHAT_ID` | ❌ 可选 | Telegram Chat ID（接收通知的用户或群组 ID） |
+
+> 💡 **多账号场景**：登录凭据改用 `ACC1_DISCORD_TOKEN` / `ACC1_EMAIL` 这类带分支前缀的命名（分支 `acc1` 对应 `ACC1_*`），详见下方 [多账号方案](#-多账号方案5-个分支--cloudflare-worker-定时触发)。
 
 > [!NOTE]
 > 无需手动配置 VPS 地址，脚本登录后会**自动从面板检测**账号下所有 VPS 实例并逐一续期。
@@ -41,7 +44,7 @@
    - 进入 **Actions** 标签页。
    - 选择左侧的 **Auto Renew Openworld VPS** 工作流。
    - 点击 **Run workflow** 按钮启动测试。
-5. **定时自动运行**：工作流默认每 2 天自动触发运行一次，实现完全无人值守。
+5. **定时自动运行**：可配置 Cloudflare Worker 定时触发（见下方 [多账号方案](#-多账号方案5-个分支--cloudflare-worker-定时触发)），不依赖 GitHub 自带定时器。
 
 ---
 
@@ -57,6 +60,80 @@
 > ⚠️ **安全提示**：请妥善保管你的 Discord Token，切勿泄露给他人。
 
 ---
+
+## 🧩 多账号方案（5 个分支 + Cloudflare Worker 定时触发）
+
+支持 5 个账号，每个账号对应一个分支（`acc1` ~ `acc5`），脚本会根据分支名自动读取对应前缀的 Secret，互不干扰。定时触发由 Cloudflare Worker 完成，不依赖 GitHub 自带定时器。
+
+### 1. 创建 5 个分支
+
+分支上不需要做任何文件改动，直接从最新 `main` 拉出来即可：
+
+```bash
+git checkout main && git pull
+git push origin main
+git branch acc1
+git branch acc2
+git branch acc3
+git branch acc4
+git branch acc5
+git push origin acc1 acc2 acc3 acc4 acc5
+```
+
+> 也可以直接在 GitHub 网页端操作：仓库页面 ➡ 分支下拉框输入 `acc1` 回车，依次创建 5 个分支。
+
+### 2. Secrets 配置
+
+每个账号的登录凭据按分支前缀命名（分支 `acc1` 对应 `ACC1_*`，依此类推）：
+
+| Secret 名称 | 是否必填 | 说明 |
+|---|---|---|
+| ACC1_DISCORD_TOKEN ~ ACC5_DISCORD_TOKEN | ✅ 必填 | 对应账号的 Discord 授权 Token |
+| ACC1_EMAIL ~ ACC5_EMAIL | ❌ 可选 | 对应账号的标识邮箱（TG 通知会显示，方便分辨是哪个号） |
+
+共享 Secret（所有账号共用一份）：
+
+| Secret 名称 | 说明 |
+|---|---|
+| TG_BOT_TOKEN / TG_CHAT_ID | TG 通知（所有账号共用） |
+
+> Secret 名不区分大小写，统一用大写即可。
+> 💡 `main` 分支兼容单账号模式：自动回退读取不带前缀的 `DISCORD_TOKEN` / `EMAIL`，多账号只走 `acc1`~`acc5` 分支。
+
+### 3. Cloudflare Worker 定时触发
+
+Worker 每天定时向 GitHub Actions API 发起 5 次手动触发，每次指定一个分支：
+
+```js
+// wrangler.jsonc 中的 cron 触发器（按自己服务的到期时间调整）
+// { "crons": [ "0 6 */2 * *" ] }
+
+const REPO = "nslooks/openworldvps-renew";
+const BRANCHES = ["acc1", "acc2", "acc3", "acc4", "acc5"];
+
+export default {
+  async scheduled(event, env, ctx) {
+    const token = env.GITHUB_TOKEN; // Worker 的 Secret 中存放的触发 token
+    for (const ref of BRANCHES) {
+      const res = await fetch(
+        `https://api.github.com/repos/${REPO}/actions/workflows/renew-openworld.yml/dispatches`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          body: JSON.stringify({ ref }),
+        }
+      );
+      console.log(ref, res.status); // 成功返回 204
+    }
+  },
+};
+```
+
+> 触发用的 token 需要 GitHub(classic) `repo` + `workflow` 权限（或 fine-grained token 勾选该仓库 Actions 读写），放在 Worker 的 Secret 里，不要明文写死。
 
 ## ⚠️ 免责声明
 
