@@ -195,7 +195,7 @@ def login_with_discord_token(page, dc_token: str) -> bool:
     # ========== 第3步：从 URL 解析 OAuth 参数 ==========
     print(f"\n📌 第3步：解析 OAuth 参数")
     oauth_url = page.url
-    print(f"   Discord OAuth URL: {oauth_url[:100]}...")
+    print(f"   Discord OAuth URL: {oauth_url[:160]}...")
 
     parsed = urllib.parse.urlparse(oauth_url)
     params = urllib.parse.parse_qs(parsed.query)
@@ -205,6 +205,28 @@ def login_with_discord_token(page, dc_token: str) -> bool:
     scope        = params.get("scope", ["identify email"])[0]
     state        = params.get("state", [""])[0]
     response_type = params.get("response_type", ["code"])[0]
+
+    # 改版后(Clerk 流程)顶级 query 可能没有 OAuth 参数,
+    # 而是编码在 redirect_to 参数里(如 /oauth2/authorize?client_id=...&redirect_uri=...)
+    if (not client_id or not redirect_uri) and params.get("redirect_to"):
+        print("   ⚠️ 顶级参数不含 client_id/redirect_uri，尝试从 redirect_to 解码...")
+        rt = params.get("redirect_to", [""])[0]
+        try:
+            rt_parts = urllib.parse.urlsplit(rt)
+            rt_params = urllib.parse.parse_qs(rt_parts.query)
+            client_id    = rt_params.get("client_id", [""])[0] or client_id
+            redirect_uri = rt_params.get("redirect_uri", [""])[0] or redirect_uri
+            scope        = rt_params.get("scope", [scope])[0] or scope
+            state        = rt_params.get("state", ["", state])[0] or state
+            response_type = rt_params.get("response_type", [response_type])[0] or response_type
+            print("   ✅ 从 redirect_to 成功解码 OAuth 参数")
+        except Exception as e:
+            print(f"   ⚠️ 解析 redirect_to 失败: {e}")
+
+    # 如果 redirect_uri 为空但拿到了 client_id，尝试用 discordsafe 的默认值
+    if client_id and not redirect_uri:
+        # 不少站点沿用 discord default callback，这里留个提示而非硬编码
+        print("   ⚠️ redirect_uri 为空，后续可能无法完成授权")
 
     print(f"   Client ID:    {client_id}")
     print(f"   Redirect URI: {redirect_uri}")
