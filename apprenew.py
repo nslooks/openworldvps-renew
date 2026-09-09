@@ -93,11 +93,10 @@ def login_with_discord_token(page, dc_token: str) -> bool:
     print("🔑 开始 Discord OAuth 登录流程")
     print("=" * 50)
 
-    # ========== 第1步：触发 Discord OAuth 重定向 ==========
-    # openworld.eu.org 的登录按钮指向 /discord-login，
-    # 服务端会 302 重定向到 Discord 的 OAuth2 授权页面
-    discord_login_url = f"{SITE_BASE}/discord-login"
-    print(f"\n📌 第1步：访问 Discord 登录入口: {discord_login_url}")
+    # ========== 第1步：进入登录页并点击"Continue with Discord" ==========
+    # 改版后登录页为 /login,"Continue with Discord" 按钮需先点"Sign in"才会出现
+    login_url = f"{SITE_BASE}/login"
+    print(f"\n📌 第1步：访问登录页: {login_url}")
 
     try:
         # 先访问首页建立基础 cookie/session
@@ -106,15 +105,54 @@ def login_with_discord_token(page, dc_token: str) -> bool:
         time.sleep(2)
         print(f"   首页加载完成，当前 URL: {page.url}")
 
-        # 访问 /discord-login，这会触发 302 到 Discord
-        page.goto(discord_login_url, wait_until="domcontentloaded", timeout=30000)
+        # 访问 /login 登录页
+        page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+        wait_for_cloudflare(page)
         time.sleep(3)
     except Exception as e:
         print(f"   ⚠️ 页面加载异常: {e}")
-        # 即使超时也可能已经跳转了，继续检查
 
     current_url = page.url
-    print(f"   跳转后 URL: {current_url}")
+    print(f"   登录页 URL: {current_url}")
+
+    # ---- 若未自动跳转到 Discord，尝试在登录页手动点击进入 Discord OAuth ----
+    if "discord.com" not in current_url:
+        print("   未自动跳转到 Discord，尝试在登录页点击按钮进入 Discord...")
+        save_screenshot(page, "before_signin_click")
+
+        # 先点击 "Sign in" 按钮(改版后 Continue with Discord 在其后出现)
+        try:
+            signin_btn = page.locator(
+                "button:has-text('Sign in'), "
+                "a:has-text('Sign in'), "
+                "[role='button']:has-text('Sign in')"
+            ).first
+            if signin_btn.is_visible(timeout=4000):
+                signin_btn.click()
+                print("   ✅ 已点击 'Sign in' 按钮")
+                time.sleep(3)
+        except Exception as e:
+            print(f"   ⚠️ 点击 'Sign in' 失败(可能无需点击): {e}")
+
+        # 再查找 "Continue with Discord" 按钮并点击
+        try:
+            discord_btn = page.locator(
+                "a[href*='discord'], "
+                "button:has-text('Discord'), "
+                "a:has-text('Discord')"
+            ).first
+            if discord_btn.is_visible(timeout=5000):
+                href = discord_btn.get_attribute("href")
+                print(f"   找到 Discord 按钮，href={href}")
+                discord_btn.click()
+                time.sleep(5)
+                current_url = page.url
+                print(f"   点击后 URL: {current_url}")
+            else:
+                print("   未找到 Discord 按钮")
+        except Exception as e:
+            print(f"   ⚠️ 查找/点击 Discord 按钮失败: {e}")
+            save_screenshot(page, "discord_btn_not_found")
 
     # ========== 第2步：检查是否到达了 Discord 授权页 ==========
     print(f"\n📌 第2步：检查 Discord OAuth 页面")
